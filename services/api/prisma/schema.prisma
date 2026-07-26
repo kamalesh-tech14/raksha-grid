@@ -1,0 +1,300 @@
+// Raksha Grid — database schema (PostgreSQL + PostGIS)
+// Covers the entity plan from docs/PHASE-1-PRODUCT-DEFINITION.md §12.
+// Not every entity from that list is modelled yet — only what Phase 3
+// (auth foundation + first real SOS flow) needs. The rest (volunteers,
+// missions, hospitals, shelters, gateways, satellite/lora messages,
+// alerts, predictions...) are added in the phases that actually use them,
+// so the schema never gets ahead of working code.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  civilian
+  volunteer
+  rescue_team
+  hospital_operator
+  shelter_operator
+  ngo_coordinator
+  government_operator
+  administrator
+}
+
+enum EmergencyPriority {
+  P1
+  P2
+  P3
+  P4
+}
+
+enum EmergencyType {
+  trapped
+  medical
+  flood
+  fire
+  building_collapse
+  cyclone
+  landslide
+  missing_person
+  unsafe_location
+  food_water_request
+  other
+}
+
+enum LocationSource {
+  live_gps
+  last_known
+  manual_map
+  landmark
+  relay_estimated
+}
+
+enum SosDeliveryState {
+  draft
+  collecting_location
+  stored_locally
+  checking_routes
+  queued
+  sending
+  relay_transferred
+  delivered
+  acknowledged
+  rescue_assigned
+  help_approaching
+  resolved
+  retry_scheduled
+  failed
+}
+
+enum CommunicationRoute {
+  internet
+  sms
+  bluetooth_relay
+  wifi_direct
+  lora_gateway
+  satellite_iot
+  satellite_broadband
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  displayName  String
+  role         UserRole @default(civilian)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  devices       Device[]
+  sosIncidents  SosIncident[]
+  refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]
+
+  @@map("users")
+}
+
+/// Refresh tokens are stored hashed and rotated on every use — see
+/// docs/PHASE-3-ARCHITECTURE.md "Auth strategy". A reused (already-rotated)
+/// token immediately revokes the whole session family.
+model RefreshToken {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash   String    @unique
+  familyId    String
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  replacedBy  String?
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model Device {
+  id            String   @id @default(uuid())
+  userId        String?
+  user          User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  deviceIdHash  String   @unique
+  platform      String? // "web" | "ios" | "android"
+  lastSeenAt    DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  sosIncidents SosIncident[]
+
+  @@map("devices")
+}
+
+/// The core incident record. Exact coordinates are a separate,
+/// access-controlled read (see docs/PHASE-3-ARCHITECTURE.md "Security
+/// implications") rather than being exposed on every list endpoint.
+model SosIncident {
+  id              String            @id @default(uuid())
+  idempotencyKey  String            @unique
+  userId          String?
+  user            User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  deviceId        String
+  device          Device            @relation(fields: [deviceId], references: [id])
+
+  emergencyType   EmergencyType
+  priority        EmergencyPriority
+  aiSuggestedPriority EmergencyPriority?
+
+  /// PostGIS geography point (lon, lat), SRID 4326. Prisma has no native
+  /// geography type, so this column is created via raw SQL in the initial
+  /// migration (see prisma/migrations/.../migration.sql) and marked
+  /// Unsupported here so `prisma generate` doesn't choke on it.
+  location        Unsupported("geography(Point, 4326)")?
+  accuracyMetres  Float?
+  altitudeMetres  Float?
+  locationSource  LocationSource
+  locationCapturedAt DateTime?
+
+  peopleAffected  Int      @default(1)
+  injurySeverity  String?  // none | minor | serious | critical | unknown
+  mobilityStatus  String?  // mobile | limited | immobile | unknown
+  shortMessage    String?
+
+  batteryPercentage Int?
+  deliveryState   SosDeliveryState @default(draft)
+  retryCount      Int              @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  updates          IncidentUpdate[]
+  deliveryAttempts DeliveryAttempt[]
+
+  @@index([deliveryState])
+  @@index([priority])
+  @@map("sos_incidents")
+}
+
+/// Append-only audit trail of state/priority changes — required by the
+/// skill's "record all priority changes in an audit log" rule.
+model IncidentUpdate {
+  id         String      @id @default(uuid())
+  incidentId String
+  incident   SosIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  fromState  String?
+  toState    String
+  note       String?
+  actorUserId String?
+  createdAt  DateTime    @default(now())
+
+  @@index([incidentId])
+  @@map("incident_updates")
+}
+
+/// One row per attempted communication route for an incident — this is
+/// what powers the "always show the last attempted route" UI rule.
+model DeliveryAttempt {
+  id                String             @id @default(uuid())
+  incidentId        String
+  incident          SosIncident        @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  route             CommunicationRoute
+  simulated         Boolean            @default(false)
+  accepted          Boolean            @default(false)
+  delivered         Boolean            @default(false)
+  acknowledged      Boolean            @default(false)
+  providerReference String?
+  errorCode         String?
+  errorMessage      String?
+  attemptedAt       DateTime           @default(now())
+  deliveredAt       DateTime?
+
+  @@index([incidentId])
+  @@map("delivery_attempts")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorUserId String?
+  actor      User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  action     String
+  targetType String
+  targetId   String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([targetType, targetId])
+  @@map("audit_logs")
+}
+
+/// Phase 6: real, queryable prediction records — no live ML model behind
+/// this yet, so every row is seeded/generated demonstration data and
+/// `isDemonstrationData` is always true today. The shape is what a real
+/// model's output would populate later without an API change. `centerLat`
+/// / `centerLng` / `radiusMetres` describe a simple circular risk zone —
+/// full polygon support (GeoJSON) is deferred until a real GIS data
+/// source exists to justify the complexity.
+model DisasterPrediction {
+  id           String   @id @default(uuid())
+  disasterType String
+  regionId     String
+  regionName   String
+  probability  Float
+  confidence   Float
+  severity     String // low | moderate | high | severe | critical
+  expectedStart DateTime
+  expectedEnd   DateTime?
+  affectedPopulationEstimate Int?
+  explanation       Json // string[]
+  recommendedActions Json // string[]
+  dataSourceLabel   String
+  isDemonstrationData Boolean @default(true)
+  generatedAt DateTime @default(now())
+  validUntil  DateTime
+
+  centerLat    Float?
+  centerLng    Float?
+  radiusMetres Float?
+
+  createdAt DateTime @default(now())
+
+  @@index([regionId])
+  @@index([validUntil])
+  @@map("disaster_predictions")
+}
+
+/// Real, queryable shelter/hospital records — replaces the hard-coded
+/// DEMO_SHELTERS/DEMO_HOSPITALS arrays that lived directly in RiskMap.tsx.
+/// Still seeded data (no ShelterOperator/HospitalOperator UI exists yet to
+/// update these live — that's Phase 7/8), but now a real table a real
+/// operator role could update once built, not a frontend constant.
+model Shelter {
+  id          String   @id @default(uuid())
+  name        String
+  latitude    Float
+  longitude   Float
+  capacity    Int
+  occupancy   Int      @default(0)
+  isOpen      Boolean  @default(true)
+  hasMedical  Boolean  @default(false)
+  hasPower    Boolean  @default(true)
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  @@map("shelters")
+}
+
+model Hospital {
+  id                 String   @id @default(uuid())
+  name                String
+  latitude            Float
+  longitude           Float
+  emergencyBeds       Int
+  icuBeds             Int      @default(0)
+  ambulanceAvailable  Boolean  @default(true)
+  isOperational       Boolean  @default(true)
+  updatedAt           DateTime @updatedAt
+  createdAt           DateTime @default(now())
+
+  @@map("hospitals")
+}

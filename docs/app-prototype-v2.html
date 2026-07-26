@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Raksha Grid — Click-through Prototype v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-void:#0A0F1C; --bg-surface:#111A2B; --bg-surface-raised:#17223A;
+    --border-hairline:rgba(255,255,255,0.08);
+    --accent-cyan:#3AD1F2; --accent-electric:#4C7CFF;
+    --warn-amber:#F2A93C; --danger-red:#FF4D5E; --success-green:#2ED9A0;
+    --text-primary:#F2F5FA; --text-muted:#8CA0C2; --text-disabled:#4B5A76;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; background:#05070d; min-height:100vh; display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Sans', sans-serif;}
+  .hint{position:fixed; top:16px; left:50%; transform:translateX(-50%); color:#8CA0C2; font-family:'IBM Plex Mono',monospace; font-size:12px; text-align:center;}
+  .frame{width:390px; height:780px; background:var(--bg-void); border-radius:36px; border:8px solid #000; overflow:hidden; position:relative; box-shadow:0 30px 80px rgba(0,0,0,0.6); display:flex; flex-direction:column;}
+  .statusbar{display:flex; justify-content:space-between; align-items:center; padding:14px 20px 6px; color:var(--text-primary); font-size:13px; font-family:'IBM Plex Mono', monospace; flex-shrink:0;}
+  .header{display:flex; justify-content:space-between; align-items:center; padding:8px 20px 16px; flex-shrink:0;}
+  .brand{font-family:'Space Grotesk', sans-serif; font-weight:700; font-size:19px; color:var(--text-primary); display:flex; align-items:center; gap:8px;}
+  .brand .dot{width:8px;height:8px;border-radius:50%;background:var(--accent-cyan); box-shadow:0 0 8px var(--accent-cyan);}
+  .bell{position:relative; color:var(--text-muted);}
+  .badge{position:absolute; top:-6px; right:-8px; background:var(--danger-red); color:#fff; font-size:10px; font-family:'IBM Plex Mono',monospace; width:16px; height:16px; border-radius:50%; display:flex; align-items:center; justify-content:center;}
+
+  .screen{display:none; flex-direction:column; flex:1; min-height:0;}
+  .screen.active{display:flex;}
+  .content{flex:1; overflow-y:auto; padding:0 20px 12px;}
+
+  /* Home screen bits */
+  .alert-banner{background:linear-gradient(90deg, rgba(242,169,60,0.16), rgba(242,169,60,0.04)); border:1px solid rgba(242,169,60,0.35); border-radius:16px; padding:12px 14px; margin-bottom:16px; display:flex; gap:10px; align-items:flex-start; cursor:pointer;}
+  .alert-banner .icon{color:var(--warn-amber); font-size:18px;}
+  .alert-banner .title{color:var(--text-primary); font-weight:600; font-size:14px;}
+  .alert-banner .sub{color:var(--text-muted); font-size:12px; margin-top:2px; font-family:'IBM Plex Mono',monospace;}
+  .section-title{color:var(--text-muted); font-size:12px; letter-spacing:0.08em; text-transform:uppercase; margin:4px 0 10px;}
+  .risk-row{display:flex; gap:10px; overflow-x:auto; padding-bottom:14px; margin-bottom:6px;}
+  .risk-card{min-width:104px; background:var(--bg-surface); border:1px solid var(--border-hairline); border-radius:16px; padding:12px; flex-shrink:0;}
+  .risk-card .label{color:var(--text-muted); font-size:12px;}
+  .risk-card .pct{font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:22px; margin-top:6px;}
+  .risk-card.flood .pct{color:var(--warn-amber);} .risk-card.rain .pct{color:var(--accent-cyan);} .risk-card.heat .pct{color:var(--success-green);}
+  .risk-card .bar{height:3px; border-radius:2px; background:var(--border-hairline); margin-top:8px; overflow:hidden;}
+  .risk-card .bar span{display:block; height:100%;}
+  .risk-card.flood .bar span{width:62%; background:var(--warn-amber);}
+  .risk-card.rain .bar span{width:40%; background:var(--accent-cyan);}
+  .risk-card.heat .bar span{width:18%; background:var(--success-green);}
+  .demo-badge{display:inline-block; font-size:10px; color:var(--text-disabled); border:1px solid var(--border-hairline); border-radius:6px; padding:2px 6px; margin-left:8px; font-family:'IBM Plex Mono',monospace;}
+
+  .sos-zone{display:flex; flex-direction:column; align-items:center; justify-content:center; padding:18px 0 22px; position:relative;}
+  .ring{width:118px; height:118px; border-radius:50%; display:flex; align-items:center; justify-content:center; position:relative;}
+  .ring::before{content:''; position:absolute; inset:0; border-radius:50%; border:2px solid var(--warn-amber); animation:pulse 2.4s ease-out infinite;}
+  .sos-btn{width:88px; height:88px; border-radius:50%; border:none; background:radial-gradient(circle at 35% 30%, #ff6b78, var(--danger-red)); color:#fff; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:17px; letter-spacing:0.03em; cursor:pointer; box-shadow:0 8px 20px rgba(255,77,94,0.45); display:flex; align-items:center; justify-content:center; z-index:2; -webkit-tap-highlight-color: transparent; user-select:none; transition:transform .15s ease;}
+  .sos-btn:active{transform:scale(0.96);}
+  .sos-btn.holding{background:radial-gradient(circle at 35% 30%, #ffd35c, var(--warn-amber)); }
+  .hold-hint{color:var(--text-muted); font-size:12px; margin-top:12px; font-family:'IBM Plex Mono',monospace;}
+  @keyframes pulse{0%{transform:scale(1); opacity:0.9;} 70%{transform:scale(1.55); opacity:0;} 100%{opacity:0;}}
+  .progress-wrap{width:88px; height:88px; position:absolute; z-index:3; display:none;}
+  .progress-wrap.show{display:block;}
+  .progress-wrap svg{transform:rotate(-90deg);}
+  .progress-wrap circle{fill:none; stroke-width:5;}
+  .progress-bg{stroke:rgba(255,255,255,0.15);}
+  .progress-fg{stroke:#fff; stroke-linecap:round; transition:stroke-dashoffset .05s linear;}
+
+  .nearby{background:var(--bg-surface); border:1px solid var(--border-hairline); border-radius:16px; padding:12px 14px;}
+  .nearby-item{display:flex; justify-content:space-between; align-items:center; padding:8px 0; font-size:13px; color:var(--text-primary);}
+  .nearby-item + .nearby-item{border-top:1px solid var(--border-hairline);}
+  .nearby-item .dist{color:var(--text-muted); font-family:'IBM Plex Mono',monospace; font-size:12px;}
+
+  /* SOS status screen */
+  .status-header{padding:6px 0 18px; text-align:center;}
+  .status-id{font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--text-muted);}
+  .status-priority{display:inline-block; margin-top:6px; background:rgba(255,77,94,0.15); color:var(--danger-red); border:1px solid rgba(255,77,94,0.4); font-family:'IBM Plex Mono',monospace; font-size:12px; padding:3px 10px; border-radius:20px;}
+  .timeline{position:relative; padding-left:26px;}
+  .timeline::before{content:''; position:absolute; left:7px; top:6px; bottom:6px; width:2px; background:var(--border-hairline);}
+  .tl-step{position:relative; padding-bottom:20px;}
+  .tl-step::before{content:''; position:absolute; left:-26px; top:2px; width:14px; height:14px; border-radius:50%; background:var(--bg-surface); border:2px solid var(--text-disabled);}
+  .tl-step.done::before{background:var(--success-green); border-color:var(--success-green);}
+  .tl-step.current::before{background:var(--warn-amber); border-color:var(--warn-amber); box-shadow:0 0 0 4px rgba(242,169,60,0.2);}
+  .tl-title{font-size:14px; font-weight:600;}
+  .tl-step.done .tl-title{color:var(--success-green);}
+  .tl-step.current .tl-title{color:var(--warn-amber);}
+  .tl-step:not(.done):not(.current) .tl-title{color:var(--text-disabled);}
+  .tl-sub{font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text-muted); margin-top:2px;}
+  .route-note{margin-top:8px; background:var(--bg-surface); border:1px solid var(--border-hairline); border-radius:12px; padding:10px 12px; font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text-muted);}
+  .sim-tag{display:inline-block; margin-left:6px; font-size:9px; color:var(--warn-amber); border:1px solid rgba(242,169,60,0.4); border-radius:5px; padding:1px 5px;}
+
+  /* Map screen */
+  .map-canvas{position:relative; height:340px; border-radius:16px; background:
+    radial-gradient(circle at 30% 30%, rgba(255,77,94,0.18), transparent 40%),
+    radial-gradient(circle at 60% 55%, rgba(242,169,60,0.16), transparent 45%),
+    linear-gradient(135deg, #0E1830, #101A2E 60%, #0B1424);
+    border:1px solid var(--border-hairline); overflow:hidden; margin-bottom:14px;}
+  .map-controls{position:absolute; top:10px; left:10px; right:10px; display:flex; gap:8px;}
+  .chip{background:rgba(17,26,43,0.85); border:1px solid var(--border-hairline); color:var(--text-primary); font-size:11px; padding:6px 10px; border-radius:20px; font-family:'IBM Plex Sans',sans-serif;}
+  .pin{position:absolute; font-size:18px; filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));}
+  .legend{display:flex; flex-wrap:wrap; gap:10px; font-size:11px; color:var(--text-muted); margin-bottom:14px;}
+  .legend span{display:inline-flex; align-items:center; gap:5px;}
+  .legend i{width:8px; height:8px; border-radius:50%; display:inline-block;}
+  .offline-note{font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text-muted); text-align:center; margin-top:-6px; margin-bottom:14px;}
+
+  /* Alerts screen */
+  .alert-group-title{font-size:11px; letter-spacing:0.08em; text-transform:uppercase; margin:16px 0 8px; font-weight:600;}
+  .alert-group-title.critical{color:var(--danger-red);}
+  .alert-group-title.warning{color:var(--warn-amber);}
+  .alert-group-title.advisory{color:var(--accent-cyan);}
+  .alert-item{display:flex; gap:10px; background:var(--bg-surface); border:1px solid var(--border-hairline); border-radius:14px; padding:12px; margin-bottom:8px;}
+  .alert-item .a-title{font-size:14px; font-weight:600;}
+  .alert-item .a-sub{font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text-muted); margin-top:3px;}
+
+  /* v2 Home dashboard additions */
+  .greet-row{display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px;}
+  .greet-title{font-family:'Space Grotesk',sans-serif; font-size:17px; font-weight:700; color:#FFFFFF; text-shadow:0 0 14px rgba(255,255,255,0.25);}
+  .live-pill{display:flex; align-items:center; gap:5px; font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text-muted); white-space:nowrap; margin-top:3px;}
+  .live-dot{width:6px; height:6px; border-radius:50%; background:var(--success-green); box-shadow:0 0 6px var(--success-green); animation:pulse-dot 1.8s ease-in-out infinite;}
+  @keyframes pulse-dot{0%,100%{opacity:1;} 50%{opacity:0.35;}}
+
+  .hero-status{border-radius:16px; border:1px solid rgba(46,217,160,0.35); background:linear-gradient(135deg, rgba(46,217,160,0.14), rgba(46,217,160,0.02)); padding:14px 16px; margin-bottom:12px;}
+  .hero-status .badge-row{display:flex; align-items:center; gap:8px;}
+  .hero-status .status-dot{width:10px; height:10px; border-radius:50%; background:var(--success-green); box-shadow:0 0 8px var(--success-green);}
+  .hero-status .status-word{font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px; color:var(--success-green);}
+  .hero-status .loc{margin-top:6px; font-size:13px; color:var(--text-primary);}
+  .hero-status .ts{margin-top:2px; font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text-muted);}
+
+  .comms-row{display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px;}
+  .comms-chip{font-family:'IBM Plex Mono',monospace; font-size:11px; padding:4px 9px; border-radius:14px; border:1px solid var(--border-hairline); color:var(--text-muted); background:var(--bg-surface);}
+  .comms-chip.ok{color:var(--success-green); border-color:rgba(46,217,160,0.35);}
+  .comms-chip.bad{color:var(--text-disabled);}
+  .comms-meta{font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text-muted); margin-bottom:14px;}
+  .comms-meta b{color:var(--text-primary); font-weight:500;}
+
+  .pred-card{border-radius:16px; border:1px solid var(--border-hairline); background:var(--bg-surface); padding:14px 16px; margin-bottom:14px;}
+  .pred-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;}
+  .pred-head .pred-label{font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em;}
+  .pred-main{display:flex; align-items:baseline; gap:10px;}
+  .pred-pct{font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:30px; color:var(--warn-amber);}
+  .pred-risk-pill{font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--warn-amber); border:1px solid rgba(242,169,60,0.4); background:rgba(242,169,60,0.1); padding:3px 9px; border-radius:20px;}
+  .pred-sub{margin-top:10px; display:flex; justify-content:space-between; font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text-muted);}
+
+  .weather-strip{display:flex; align-items:center; justify-content:space-between; border-radius:16px 16px 0 0; border:1px solid var(--border-hairline); border-bottom:none; background:var(--bg-surface); padding:12px 16px;}
+  .weather-temp{font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:22px;}
+  .weather-cond{font-size:12px; color:var(--text-muted); margin-top:2px;}
+  .weather-meta{text-align:right; font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text-muted); line-height:1.6;}
+  .heat-row{display:flex; align-items:center; justify-content:space-between; border-radius:0 0 16px 16px; border:1px solid var(--border-hairline); border-top:1px solid var(--border-hairline); background:var(--bg-surface-raised); padding:9px 16px 11px; margin-bottom:14px;}
+  .heat-row .heat-label{font-size:11px; color:var(--text-muted); display:flex; align-items:center; gap:6px;}
+  .heat-pill{font-family:'IBM Plex Mono',monospace; font-size:11px; padding:2px 9px; border-radius:20px; border:1px solid rgba(46,217,160,0.4); color:var(--success-green); background:rgba(46,217,160,0.1);}
+
+  .resource-card{display:flex; justify-content:space-between; align-items:center; border-radius:16px; border:1px solid var(--border-hairline); background:var(--bg-surface); padding:12px 14px; margin-bottom:10px;}
+  .resource-card .r-name{font-size:13px; font-weight:600;}
+  .resource-card .r-sub{font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text-muted); margin-top:3px;}
+  .resource-card .r-dist{font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--accent-cyan); text-align:right;}
+  .resource-card .r-status{font-size:10px; margin-top:3px; color:var(--success-green); text-align:right;}
+
+  .navbar{display:flex; justify-content:space-around; align-items:center; padding:10px 8px 18px; background:var(--bg-surface-raised); border-top:1px solid var(--border-hairline); flex-shrink:0;}
+  .navitem{display:flex; flex-direction:column; align-items:center; gap:3px; color:var(--text-muted); font-size:10px; font-family:'IBM Plex Sans',sans-serif; background:none; border:none; cursor:pointer;}
+  .navitem.active{color:var(--accent-cyan);}
+  .navitem .ico{font-size:18px;}
+
+  .toast{position:absolute; left:20px; right:20px; bottom:96px; background:var(--bg-surface-raised); border:1px solid var(--danger-red); color:var(--text-primary); border-radius:14px; padding:12px 14px; font-size:13px; opacity:0; transform:translateY(8px); transition:all .25s ease; pointer-events:none; z-index:5; font-family:'IBM Plex Mono',monospace;}
+  .toast.show{opacity:1; transform:translateY(0);}
+</style>
+</head>
+<body>
+<div class="hint">v2 — personalised dashboard. Tap the bottom nav to switch screens. Press &amp; hold SOS on Home.</div>
+<div class="frame">
+  <div class="statusbar"><span>9:41</span><span>●●● LTE  🔋 82%</span></div>
+  <div class="header">
+    <div class="brand"><span class="dot"></span>Raksha Grid</div>
+    <div class="bell">🔔<span class="badge">3</span></div>
+  </div>
+
+  <!-- HOME -->
+  <section class="screen active" id="screen-home">
+    <div class="content">
+
+      <div class="greet-row">
+        <div class="greet-title">Good morning, Pradeeksha</div>
+        <div class="live-pill"><span class="live-dot"></span>LIVE · synced 12s ago</div>
+      </div>
+
+      <div class="hero-status">
+        <div class="badge-row"><span class="status-dot"></span><span class="status-word">Safe</span></div>
+        <div class="loc">📍 Chennai · Poonamallee</div>
+        <div class="ts">Last updated 12 sec ago</div>
+      </div>
+
+      <div class="alert-banner" onclick="goTo('alerts')">
+        <div class="icon">⚠</div>
+        <div><div class="title">Flood Watch — expires in 6h</div><div class="sub">Tap for evacuation route →</div></div>
+      </div>
+
+      <div class="sos-zone">
+        <div class="ring" id="ring">
+          <button class="sos-btn" id="sosBtn">SOS</button>
+          <div class="progress-wrap" id="progressWrap">
+            <svg width="88" height="88"><circle class="progress-bg" cx="44" cy="44" r="39"></circle><circle class="progress-fg" id="progressFg" cx="44" cy="44" r="39" stroke-dasharray="245" stroke-dashoffset="245"></circle></svg>
+          </div>
+        </div>
+        <div class="hold-hint" id="holdHint">Hold 2–3s to send emergency SOS</div>
+      </div>
+
+      <div class="section-title">Communication</div>
+      <div class="comms-row">
+        <span class="comms-chip bad">Internet ❌</span>
+        <span class="comms-chip ok">GPS ✅</span>
+        <span class="comms-chip bad">SMS ❌</span>
+        <span class="comms-chip ok">Nearby Relay ✅</span>
+      </div>
+      <div class="comms-meta">Route: <b>Bluetooth Relay</b> · Status: <b>Queued</b></div>
+
+      <div class="pred-card">
+        <div class="pred-head">
+          <span class="pred-label">AI Prediction</span>
+          <span class="demo-badge">DEMO DATA</span>
+        </div>
+        <div class="pred-main">
+          <span class="pred-pct">62%</span>
+          <span class="pred-risk-pill">HIGH RISK</span>
+        </div>
+        <div class="pred-sub">
+          <span>Confidence 91%</span>
+          <span>Expected within 5h</span>
+          <span>Updated 12s ago</span>
+        </div>
+      </div>
+
+      <div class="weather-strip">
+        <div>
+          <div class="weather-temp">28°C</div>
+          <div class="weather-cond">Heavy Rain</div>
+        </div>
+        <div class="weather-meta">Humidity 84%<br>Wind 32 km/h</div>
+      </div>
+      <div class="heat-row">
+        <span class="heat-label">🌡️ Heatwave risk</span>
+        <span class="heat-pill">Low · 18%</span>
+      </div>
+
+      <div class="section-title">Nearby</div>
+      <div class="resource-card">
+        <div>
+          <div class="r-name">🏠 Nearest Safe Shelter</div>
+          <div class="r-sub">Capacity 120 / 300</div>
+        </div>
+        <div>
+          <div class="r-dist">1.2 km</div>
+          <div class="r-status">Open</div>
+        </div>
+      </div>
+      <div class="resource-card">
+        <div>
+          <div class="r-name">🏥 Nearest Hospital</div>
+          <div class="r-sub">Emergency beds: 18</div>
+        </div>
+        <div>
+          <div class="r-dist">2.4 km</div>
+          <div class="r-status">Available</div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- SOS STATUS -->
+  <section class="screen" id="screen-sos">
+    <div class="content">
+      <div class="status-header">
+        <div class="status-id">SOS #A19F-2291</div>
+        <div class="status-priority">P1 · IMMEDIATE</div>
+      </div>
+      <div class="timeline">
+        <div class="tl-step done"><div class="tl-title">GPS acquired</div><div class="tl-sub">19.0760°N, 72.8777°E · ±8m · live-gps</div></div>
+        <div class="tl-step done"><div class="tl-title">Stored locally</div><div class="tl-sub">09:41:03 · survives app restart</div></div>
+        <div class="tl-step done"><div class="tl-title">Internet unavailable</div><div class="tl-sub">checked Wi-Fi + cellular</div></div>
+        <div class="tl-step current"><div class="tl-title">Nearby relay discovered <span class="sim-tag">SIM</span></div><div class="tl-sub">forwarding via Bluetooth relay…</div></div>
+        <div class="tl-step"><div class="tl-title">LoRa gateway <span class="sim-tag">SIM</span></div><div class="tl-sub">pending</div></div>
+        <div class="tl-step"><div class="tl-title">Delivered</div><div class="tl-sub">pending</div></div>
+        <div class="tl-step"><div class="tl-title">Acknowledged</div><div class="tl-sub">pending</div></div>
+        <div class="tl-step"><div class="tl-title">Rescue assigned</div><div class="tl-sub">pending</div></div>
+      </div>
+      <div class="route-note">Last attempted route: bluetooth-relay (prototype simulation) · updated 09:41:07</div>
+    </div>
+  </section>
+
+  <!-- MAP -->
+  <section class="screen" id="screen-map">
+    <div class="content">
+      <div class="map-canvas">
+        <div class="map-controls">
+          <span class="chip">Layers ▾</span><span class="chip">🕐 Now</span><span class="chip">⌖</span>
+        </div>
+        <div class="pin" style="top:48%; left:44%;">📍</div>
+        <div class="pin" style="top:30%; left:60%;">🏠</div>
+        <div class="pin" style="top:65%; left:25%;">🏥</div>
+        <div class="pin" style="top:20%; left:22%;">🆘</div>
+      </div>
+      <div class="legend">
+        <span><i style="background:var(--danger-red)"></i>SOS</span>
+        <span><i style="background:var(--warn-amber)"></i>Flood zone</span>
+        <span><i style="background:var(--accent-cyan)"></i>You</span>
+        <span><i style="background:var(--success-green)"></i>Shelter</span>
+      </div>
+      <div class="offline-note">📶 Offline map cached 3h ago</div>
+    </div>
+  </section>
+
+  <!-- ALERTS -->
+  <section class="screen" id="screen-alerts">
+    <div class="content">
+      <div class="alert-group-title critical">Critical</div>
+      <div class="alert-item"><div>🔴</div><div><div class="a-title">Evacuate Zone 4 now</div><div class="a-sub">Issued by District Control · expires 18:00</div></div></div>
+      <div class="alert-group-title warning">Warning</div>
+      <div class="alert-item"><div>🟠</div><div><div class="a-title">Flood watch, Zone 4</div><div class="a-sub">Issued by IMD · expires 6h</div></div></div>
+      <div class="alert-group-title advisory">Advisory</div>
+      <div class="alert-item"><div>🔵</div><div><div class="a-title">Heavy rain expected tonight</div><div class="a-sub">Issued by IMD · expires 24h</div></div></div>
+    </div>
+  </section>
+
+  <div class="toast" id="toast">SOS #A19F stored locally · checking routes…</div>
+
+  <div class="navbar">
+    <button class="navitem active" data-screen="home" onclick="goTo('home')"><div class="ico">🏠</div>Home</button>
+    <button class="navitem" data-screen="map" onclick="goTo('map')"><div class="ico">🗺️</div>Map</button>
+    <button class="navitem" data-screen="sos" onclick="goTo('sos')"><div class="ico">🆘</div>SOS</button>
+    <button class="navitem" data-screen="alerts" onclick="goTo('alerts')"><div class="ico">🔔</div>Alerts</button>
+    <button class="navitem" data-screen="more" onclick="alert('More screen — coming in a later phase')"><div class="ico">⋯</div>More</button>
+  </div>
+</div>
+
+<script>
+  function goTo(name){
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById('screen-' + name).classList.add('active');
+    document.querySelectorAll('.navitem').forEach(n => n.classList.toggle('active', n.dataset.screen === name));
+  }
+
+  const btn = document.getElementById('sosBtn');
+  const ring = document.getElementById('ring');
+  const progressWrap = document.getElementById('progressWrap');
+  const progressFg = document.getElementById('progressFg');
+  const holdHint = document.getElementById('holdHint');
+  const toast = document.getElementById('toast');
+  const HOLD_MS = 2000, CIRC = 245;
+  let raf = null, startTime = null;
+
+  function startHold(){
+    btn.classList.add('holding');
+    progressWrap.classList.add('show');
+    holdHint.textContent = 'Keep holding… release to cancel';
+    startTime = performance.now();
+    function tick(now){
+      const elapsed = now - startTime;
+      const pct = Math.min(elapsed / HOLD_MS, 1);
+      progressFg.style.strokeDashoffset = CIRC - CIRC * pct;
+      if(pct < 1){ raf = requestAnimationFrame(tick); } else { activateSOS(); }
+    }
+    raf = requestAnimationFrame(tick);
+  }
+  function cancelHold(){
+    if(raf) cancelAnimationFrame(raf);
+    btn.classList.remove('holding');
+    progressWrap.classList.remove('show');
+    progressFg.style.strokeDashoffset = CIRC;
+    holdHint.textContent = 'Hold 2–3s to send emergency SOS';
+  }
+  function activateSOS(){
+    cancelHold();
+    toast.classList.add('show');
+    setTimeout(()=>{ toast.classList.remove('show'); goTo('sos'); }, 900);
+  }
+  btn.addEventListener('mousedown', startHold);
+  btn.addEventListener('touchstart', (e)=>{e.preventDefault(); startHold();}, {passive:false});
+  btn.addEventListener('mouseup', cancelHold);
+  btn.addEventListener('mouseleave', cancelHold);
+  btn.addEventListener('touchend', cancelHold);
+  btn.addEventListener('touchcancel', cancelHold);
+</script>
+</body>
+</html>

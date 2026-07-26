@@ -1,0 +1,15 @@
+node_modules/
+.env
+.env.local
+.env*.local
+!.env.example
+!.env.local.example
+.next/
+dist/
+build/
+out/
+*.log
+.DS_Store
+.vercel
+.railway
+coverage/

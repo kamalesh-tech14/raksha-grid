@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Raksha Grid — Home Prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-void:#0A0F1C;
+    --bg-surface:#111A2B;
+    --bg-surface-raised:#17223A;
+    --border-hairline:rgba(255,255,255,0.08);
+    --accent-cyan:#3AD1F2;
+    --accent-electric:#4C7CFF;
+    --warn-amber:#F2A93C;
+    --danger-red:#FF4D5E;
+    --success-green:#2ED9A0;
+    --text-primary:#F2F5FA;
+    --text-muted:#8CA0C2;
+    --text-disabled:#4B5A76;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:#05070d; min-height:100vh;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'IBM Plex Sans', sans-serif;
+  }
+  .frame{
+    width:390px; height:780px; background:var(--bg-void);
+    border-radius:36px; border:8px solid #000; overflow:hidden;
+    position:relative; box-shadow:0 30px 80px rgba(0,0,0,0.6);
+    display:flex; flex-direction:column;
+  }
+  .statusbar{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:14px 20px 6px; color:var(--text-primary); font-size:13px;
+    font-family:'IBM Plex Mono', monospace;
+  }
+  .header{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:8px 20px 16px;
+  }
+  .brand{
+    font-family:'Space Grotesk', sans-serif; font-weight:700; font-size:19px;
+    color:var(--text-primary); display:flex; align-items:center; gap:8px;
+  }
+  .brand .dot{width:8px;height:8px;border-radius:50%;background:var(--accent-cyan);
+    box-shadow:0 0 8px var(--accent-cyan);}
+  .bell{position:relative; color:var(--text-muted);}
+  .badge{
+    position:absolute; top:-6px; right:-8px; background:var(--danger-red);
+    color:#fff; font-size:10px; font-family:'IBM Plex Mono',monospace;
+    width:16px; height:16px; border-radius:50%; display:flex;
+    align-items:center; justify-content:center;
+  }
+  .content{flex:1; overflow-y:auto; padding:0 20px 12px;}
+  .alert-banner{
+    background:linear-gradient(90deg, rgba(242,169,60,0.16), rgba(242,169,60,0.04));
+    border:1px solid rgba(242,169,60,0.35); border-radius:16px;
+    padding:12px 14px; margin-bottom:16px; display:flex; gap:10px; align-items:flex-start;
+  }
+  .alert-banner .icon{color:var(--warn-amber); font-size:18px;}
+  .alert-banner .title{color:var(--text-primary); font-weight:600; font-size:14px;}
+  .alert-banner .sub{color:var(--text-muted); font-size:12px; margin-top:2px; font-family:'IBM Plex Mono',monospace;}
+  .section-title{
+    color:var(--text-muted); font-size:12px; letter-spacing:0.08em;
+    text-transform:uppercase; margin:4px 0 10px;
+  }
+  .risk-row{display:flex; gap:10px; overflow-x:auto; padding-bottom:14px; margin-bottom:6px;}
+  .risk-card{
+    min-width:104px; background:var(--bg-surface); border:1px solid var(--border-hairline);
+    border-radius:16px; padding:12px; flex-shrink:0;
+  }
+  .risk-card .label{color:var(--text-muted); font-size:12px;}
+  .risk-card .pct{
+    font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:22px;
+    margin-top:6px;
+  }
+  .risk-card.flood .pct{color:var(--warn-amber);}
+  .risk-card.rain .pct{color:var(--accent-cyan);}
+  .risk-card.heat .pct{color:var(--success-green);}
+  .risk-card .bar{height:3px; border-radius:2px; background:var(--border-hairline); margin-top:8px; overflow:hidden;}
+  .risk-card .bar span{display:block; height:100%;}
+  .risk-card.flood .bar span{width:62%; background:var(--warn-amber);}
+  .risk-card.rain .bar span{width:40%; background:var(--accent-cyan);}
+  .risk-card.heat .bar span{width:18%; background:var(--success-green);}
+  .demo-badge{
+    display:inline-block; font-size:10px; color:var(--text-disabled);
+    border:1px solid var(--border-hairline); border-radius:6px; padding:2px 6px;
+    margin-left:8px; font-family:'IBM Plex Mono',monospace;
+  }
+
+  .sos-zone{
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:18px 0 22px; position:relative;
+  }
+  .ring{
+    width:118px; height:118px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center; position:relative;
+  }
+  .ring::before{
+    content:''; position:absolute; inset:0; border-radius:50%;
+    border:2px solid var(--warn-amber);
+    animation:pulse 2.4s ease-out infinite;
+  }
+  .sos-btn{
+    width:88px; height:88px; border-radius:50%; border:none;
+    background:radial-gradient(circle at 35% 30%, #ff6b78, var(--danger-red));
+    color:#fff; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:17px;
+    letter-spacing:0.03em; cursor:pointer; box-shadow:0 8px 20px rgba(255,77,94,0.45);
+    display:flex; align-items:center; justify-content:center; z-index:2;
+    -webkit-tap-highlight-color: transparent; user-select:none;
+    transition:transform .15s ease;
+  }
+  .sos-btn:active{transform:scale(0.96);}
+  .sos-btn.holding{background:radial-gradient(circle at 35% 30%, #ffd35c, var(--warn-amber)); }
+  .hold-hint{color:var(--text-muted); font-size:12px; margin-top:12px; font-family:'IBM Plex Mono',monospace;}
+  @keyframes pulse{
+    0%{transform:scale(1); opacity:0.9;}
+    70%{transform:scale(1.55); opacity:0;}
+    100%{opacity:0;}
+  }
+  .ring.frozen::before{animation:none; opacity:0.9; border-color:var(--danger-red); transform:scale(1);}
+
+  .progress-wrap{width:88px; height:88px; position:absolute; z-index:3; display:none;}
+  .progress-wrap.show{display:block;}
+  .progress-wrap svg{transform:rotate(-90deg);}
+  .progress-wrap circle{fill:none; stroke-width:5;}
+  .progress-bg{stroke:rgba(255,255,255,0.15);}
+  .progress-fg{stroke:#fff; stroke-linecap:round; transition:stroke-dashoffset .05s linear;}
+
+  .nearby{background:var(--bg-surface); border:1px solid var(--border-hairline);
+    border-radius:16px; padding:12px 14px;}
+  .nearby-item{display:flex; justify-content:space-between; align-items:center;
+    padding:8px 0; font-size:13px; color:var(--text-primary);}
+  .nearby-item + .nearby-item{border-top:1px solid var(--border-hairline);}
+  .nearby-item .dist{color:var(--text-muted); font-family:'IBM Plex Mono',monospace; font-size:12px;}
+
+  .navbar{
+    display:flex; justify-content:space-around; align-items:center;
+    padding:10px 8px 18px; background:var(--bg-surface-raised);
+    border-top:1px solid var(--border-hairline);
+  }
+  .navitem{display:flex; flex-direction:column; align-items:center; gap:3px;
+    color:var(--text-muted); font-size:10px; font-family:'IBM Plex Sans',sans-serif;}
+  .navitem.active{color:var(--accent-cyan);}
+  .navitem .ico{font-size:18px;}
+
+  .toast{
+    position:absolute; left:20px; right:20px; bottom:96px;
+    background:var(--bg-surface-raised); border:1px solid var(--danger-red);
+    color:var(--text-primary); border-radius:14px; padding:12px 14px;
+    font-size:13px; opacity:0; transform:translateY(8px);
+    transition:all .25s ease; pointer-events:none; z-index:5;
+    font-family:'IBM Plex Mono',monospace;
+  }
+  .toast.show{opacity:1; transform:translateY(0);}
+</style>
+</head>
+<body>
+
+<div class="frame">
+  <div class="statusbar">
+    <span>9:41</span>
+    <span>●●● LTE  🔋 82%</span>
+  </div>
+
+  <div class="header">
+    <div class="brand"><span class="dot"></span>Raksha Grid</div>
+    <div class="bell">🔔<span class="badge">3</span></div>
+  </div>
+
+  <div class="content">
+    <div class="alert-banner">
+      <div class="icon">⚠</div>
+      <div>
+        <div class="title">Flood watch — Zone 4</div>
+        <div class="sub">Expires in 6h · tap for details</div>
+      </div>
+    </div>
+
+    <div class="section-title">Risk today <span class="demo-badge">DEMO DATA</span></div>
+    <div class="risk-row">
+      <div class="risk-card flood">
+        <div class="label">Flood</div>
+        <div class="pct">62%</div>
+        <div class="bar"><span></span></div>
+      </div>
+      <div class="risk-card rain">
+        <div class="label">Heavy rain</div>
+        <div class="pct">40%</div>
+        <div class="bar"><span></span></div>
+      </div>
+      <div class="risk-card heat">
+        <div class="label">Heatwave</div>
+        <div class="pct">18%</div>
+        <div class="bar"><span></span></div>
+      </div>
+    </div>
+
+    <div class="sos-zone">
+      <div class="ring" id="ring">
+        <button class="sos-btn" id="sosBtn">SOS</button>
+        <div class="progress-wrap" id="progressWrap">
+          <svg width="88" height="88">
+            <circle class="progress-bg" cx="44" cy="44" r="39"></circle>
+            <circle class="progress-fg" id="progressFg" cx="44" cy="44" r="39"
+              stroke-dasharray="245" stroke-dashoffset="245"></circle>
+          </svg>
+        </div>
+      </div>
+      <div class="hold-hint" id="holdHint">Hold 2–3s to send emergency SOS</div>
+    </div>
+
+    <div class="section-title">Nearby</div>
+    <div class="nearby">
+      <div class="nearby-item"><span>🏠 Community Hall — open</span><span class="dist">1.2 km</span></div>
+      <div class="nearby-item"><span>🏥 City Hospital — open</span><span class="dist">2.4 km</span></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast">SOS #A19F · stored locally · checking routes…</div>
+
+  <div class="navbar">
+    <div class="navitem active"><div class="ico">🏠</div>Home</div>
+    <div class="navitem"><div class="ico">🗺️</div>Map</div>
+    <div class="navitem"><div class="ico">🆘</div>SOS</div>
+    <div class="navitem"><div class="ico">🔔</div>Alerts</div>
+    <div class="navitem"><div class="ico">⋯</div>More</div>
+  </div>
+</div>
+
+<script>
+  const btn = document.getElementById('sosBtn');
+  const ring = document.getElementById('ring');
+  const progressWrap = document.getElementById('progressWrap');
+  const progressFg = document.getElementById('progressFg');
+  const holdHint = document.getElementById('holdHint');
+  const toast = document.getElementById('toast');
+
+  const HOLD_MS = 2400;
+  const CIRC = 245;
+  let holdTimer = null, startTime = null, raf = null;
+
+  function startHold(){
+    btn.classList.add('holding');
+    progressWrap.classList.add('show');
+    holdHint.textContent = 'Keep holding… release to cancel';
+    startTime = performance.now();
+
+    function tick(now){
+      const elapsed = now - startTime;
+      const pct = Math.min(elapsed / HOLD_MS, 1);
+      progressFg.style.strokeDashoffset = CIRC - CIRC * pct;
+      if(pct < 1){
+        raf = requestAnimationFrame(tick);
+      } else {
+        activateSOS();
+      }
+    }
+    raf = requestAnimationFrame(tick);
+  }
+
+  function cancelHold(){
+    if(raf) cancelAnimationFrame(raf);
+    btn.classList.remove('holding');
+    progressWrap.classList.remove('show');
+    progressFg.style.strokeDashoffset = CIRC;
+    holdHint.textContent = 'Hold 2–3s to send emergency SOS';
+  }
+
+  function activateSOS(){
+    cancelHold();
+    ring.classList.add('frozen');
+    holdHint.textContent = 'SOS activated — stored locally';
+    toast.classList.add('show');
+    setTimeout(()=>{
+      toast.classList.remove('show');
+      ring.classList.remove('frozen');
+      holdHint.textContent = 'Hold 2–3s to send emergency SOS';
+    }, 3200);
+  }
+
+  btn.addEventListener('mousedown', startHold);
+  btn.addEventListener('touchstart', (e)=>{e.preventDefault(); startHold();}, {passive:false});
+  btn.addEventListener('mouseup', cancelHold);
+  btn.addEventListener('mouseleave', cancelHold);
+  btn.addEventListener('touchend', cancelHold);
+  btn.addEventListener('touchcancel', cancelHold);
+</script>
+
+</body>
+</html>

@@ -1,0 +1,10 @@
+{
+  "name": "Raksha Grid",
+  "short_name": "RakshaGrid",
+  "description": "Mobile-first disaster intelligence and emergency response platform.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0A0F1C",
+  "theme_color": "#0A0F1C",
+  "icons": []
+}
