@@ -23,11 +23,7 @@ export class SosController {
   @Post()
   create(@Body() dto: CreateSosDto, @Req() req: any) {
     const userId = req.user?.userId;
-    // deviceId resolution (device registration lookup/creation) happens in
-    // a DevicesService added alongside this in the same phase; omitted
-    // here to keep this controller focused on the SOS contract itself.
-    const deviceId = req.deviceId ?? dto.deviceIdHash;
-    return this.sos.create(dto, userId, deviceId);
+    return this.sos.create(dto, userId, dto.deviceIdHash);
   }
 
   // Public, low-detail status check — this is what the reporting civilian's

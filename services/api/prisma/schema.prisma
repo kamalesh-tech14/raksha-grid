@@ -146,11 +146,10 @@ model SosIncident {
   priority        EmergencyPriority
   aiSuggestedPriority EmergencyPriority?
 
-  /// PostGIS geography point (lon, lat), SRID 4326. Prisma has no native
-  /// geography type, so this column is created via raw SQL in the initial
-  /// migration (see prisma/migrations/.../migration.sql) and marked
-  /// Unsupported here so `prisma generate` doesn't choke on it.
-  location        Unsupported("geography(Point, 4326)")?
+  /// Plain lat/lng floats — not a PostGIS geography column, since this
+  /// deployment's Postgres doesn't have the PostGIS extension available.
+  latitude        Float?
+  longitude       Float?
   accuracyMetres  Float?
   altitudeMetres  Float?
   locationSource  LocationSource

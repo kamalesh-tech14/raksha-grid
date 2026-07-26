@@ -1,5 +1,4 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
 import type { SosDeliveryState } from "@raksha-grid/shared-types";
 import { PrismaService } from "../prisma.service";
 import { CreateSosDto } from "./sos.dto";
@@ -28,7 +27,7 @@ const ALLOWED_TRANSITIONS: Record<SosDeliveryState, SosDeliveryState[]> = {
 export class SosService {
   constructor(private prisma: PrismaService) {}
 
-  async create(dto: CreateSosDto, userId: string | undefined, deviceId: string) {
+  async create(dto: CreateSosDto, userId: string | undefined, deviceIdHash: string) {
     // Idempotency: replaying the same key returns the existing incident
     // instead of creating a duplicate — required by the "prevent duplicate
     // incidents" rule, and essential for a client that retries after a
@@ -37,6 +36,16 @@ export class SosService {
       where: { idempotencyKey: dto.idempotencyKey },
     });
     if (existing) return existing;
+
+    // SosIncident.deviceId is a FK to Device.id, not the client's own
+    // deviceIdHash — upsert-by-hash here since the real DevicesService
+    // (registration/lookup) hasn't been built yet (see
+    // docs/PHASE-3-ARCHITECTURE.md "What's not done").
+    const device = await this.prisma.device.upsert({
+      where: { deviceIdHash },
+      create: { deviceIdHash, userId, platform: "web" },
+      update: { lastSeenAt: new Date(), ...(userId ? { userId } : {}) },
+    });
 
     const aiSuggestedPriority = suggestPriority(
       dto.emergencyType,
@@ -48,10 +57,12 @@ export class SosService {
       data: {
         idempotencyKey: dto.idempotencyKey,
         userId,
-        deviceId,
+        deviceId: device.id,
         emergencyType: dto.emergencyType.replace(/-/g, "_") as any,
         priority: aiSuggestedPriority as any,
         aiSuggestedPriority: aiSuggestedPriority as any,
+        latitude: dto.latitude,
+        longitude: dto.longitude,
         accuracyMetres: dto.accuracyMetres,
         altitudeMetres: dto.altitudeMetres,
         locationSource: dto.locationSource.replace(/-/g, "_") as any,
@@ -64,18 +75,6 @@ export class SosService {
         deliveryState: "stored_locally",
       },
     });
-
-    // Geography column is Unsupported in Prisma's client — written via raw
-    // SQL. ST_MakePoint takes (lon, lat), the opposite order to how we
-    // normally say "lat/long" out loud — easy to get backwards, called out
-    // here deliberately.
-    if (dto.latitude !== undefined && dto.longitude !== undefined) {
-      await this.prisma.$executeRaw(
-        Prisma.sql`UPDATE "sos_incidents"
-          SET "location" = ST_SetSRID(ST_MakePoint(${dto.longitude}, ${dto.latitude}), 4326)::geography
-          WHERE "id" = ${incident.id}`
-      );
-    }
 
     await this.prisma.incidentUpdate.create({
       data: { incidentId: incident.id, toState: "stored_locally", note: "SOS created" },
