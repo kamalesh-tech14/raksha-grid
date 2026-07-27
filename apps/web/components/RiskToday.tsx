@@ -83,7 +83,7 @@ export default function RiskToday() {
             <RiskCard
               key={p.id}
               level={TYPE_TO_LEVEL[p.disasterType] ?? "rain"}
-              label={p.disasterType === "heatwave" ? "Heatwave" : p.disasterType[0].toUpperCase() + p.disasterType.slice(1)}
+              label={p.disasterType === "heatwave" ? "Heatwave" : p.disasterType.charAt(0).toUpperCase() + p.disasterType.slice(1)}
               probabilityPct={Math.round(p.probability * 100)}
             />
           ))}

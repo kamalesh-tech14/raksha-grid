@@ -32,7 +32,7 @@ const config: Config = {
         sos: "0 8px 20px rgba(255,77,94,0.45)",
       },
       keyframes: {
-        pulse-ring: {
+        "pulse-ring": {
           "0%": { transform: "scale(1)", opacity: "0.9" },
           "70%": { transform: "scale(1.55)", opacity: "0" },
           "100%": { opacity: "0" },

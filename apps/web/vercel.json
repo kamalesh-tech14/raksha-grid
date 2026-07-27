@@ -1,0 +1,3 @@
+{
+  "buildCommand": "npm run build --workspace=@raksha-grid/shared-types && npm run build --workspace=@raksha-grid/web"
+}

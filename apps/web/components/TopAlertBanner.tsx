@@ -16,7 +16,7 @@ export default function TopAlertBanner() {
         const sorted = [...preds].sort(
           (a, b) => (severityRank[b.severity] ?? 0) - (severityRank[a.severity] ?? 0)
         );
-        setTop(sorted[0]);
+        setTop(sorted[0] ?? null);
       })
       .catch(() => {
         // Silent here on purpose — RiskToday already surfaces the fetch
