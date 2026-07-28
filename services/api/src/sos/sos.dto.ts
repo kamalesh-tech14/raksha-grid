@@ -42,6 +42,10 @@ class NetworkStateDto {
   @IsIn(["wifi", "cellular", "sms", "bluetooth-relay", "wifi-direct", "lora-gateway", "satellite-gateway", "none"])
   connectionType!: string;
 
+  @IsOptional()
+  @IsIn(["slow-2g", "2g", "3g", "4g", "unknown"])
+  effectiveType?: string;
+
   @IsBoolean()
   relayAvailable!: boolean;
 
