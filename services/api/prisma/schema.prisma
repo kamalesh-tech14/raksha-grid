@@ -127,8 +127,32 @@ model Device {
   createdAt     DateTime @default(now())
 
   sosIncidents SosIncident[]
+  profile      Profile?
 
   @@map("devices")
+}
+
+/// One-time, optional profile collected on first device visit (see
+/// docs — Phase "profile setup"). Never required for SOS: a device with
+/// no Profile row still creates SOS incidents exactly as before, this
+/// table is purely additive.
+model Profile {
+  id             String   @id @default(uuid())
+  deviceId       String   @unique
+  device         Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  name           String
+  mobileNumber   String?
+  email          String?
+  guardianName   String?
+  guardianEmail  String?
+  guardianPhone  String?
+  address        String?
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("profiles")
 }
 
 /// The core incident record. Exact coordinates are a separate,

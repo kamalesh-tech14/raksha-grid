@@ -1,6 +1,7 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import type { SosDeliveryState } from "@raksha-grid/shared-types";
 import { PrismaService } from "../prisma.service";
+import { EmailService } from "../email/email.service";
 import { CreateSosDto } from "./sos.dto";
 import { suggestPriority } from "./priority.util";
 
@@ -25,7 +26,9 @@ const ALLOWED_TRANSITIONS: Record<SosDeliveryState, SosDeliveryState[]> = {
 
 @Injectable()
 export class SosService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(SosService.name);
+
+  constructor(private prisma: PrismaService, private email: EmailService) {}
 
   async create(dto: CreateSosDto, userId: string | undefined, deviceIdHash: string) {
     // Idempotency: replaying the same key returns the existing incident
@@ -80,7 +83,33 @@ export class SosService {
       data: { incidentId: incident.id, toState: "stored_locally", note: "SOS created" },
     });
 
+    // Best-effort, fire-and-forget: guardian email must never slow down or
+    // fail SOS creation, so this is deliberately not awaited and its own
+    // errors are swallowed here rather than propagating.
+    void this.notifyGuardian(device.id, incident).catch((err) =>
+      this.logger.error(`Guardian notification failed: ${err instanceof Error ? err.message : err}`)
+    );
+
     return incident;
+  }
+
+  private async notifyGuardian(
+    deviceId: string,
+    incident: { emergencyType: string; priority: string; latitude: number | null; longitude: number | null; createdAt: Date }
+  ) {
+    const profile = await this.prisma.profile.findUnique({ where: { deviceId } });
+    if (!profile?.guardianEmail) return;
+
+    await this.email.sendGuardianSosAlert({
+      guardianEmail: profile.guardianEmail,
+      guardianName: profile.guardianName,
+      reporterName: profile.name,
+      emergencyType: incident.emergencyType,
+      priority: incident.priority,
+      latitude: incident.latitude,
+      longitude: incident.longitude,
+      createdAt: incident.createdAt,
+    });
   }
 
   async findOne(id: string) {
