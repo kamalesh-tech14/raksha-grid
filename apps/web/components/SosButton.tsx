@@ -145,6 +145,21 @@ export default function SosButton({ ambientSeverity = "watch" }: SosButtonProps)
     rafRef.current = requestAnimationFrame(tick);
   }, [activate, submitState]);
 
+  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    startHold();
+  }, [startHold]);
+
+  const handlePointerUp = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    cancelHold();
+  }, [cancelHold]);
+
+  const handlePointerCancel = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    cancelHold();
+  }, [cancelHold]);
+
   const ringClass =
     submitState === "error" || submitState === "queued"
       ? "border-warn-amber opacity-90"
@@ -206,15 +221,14 @@ export default function SosButton({ ambientSeverity = "watch" }: SosButtonProps)
               ? "bg-[radial-gradient(circle_at_35%_30%,#ffd35c,theme(colors.warn-amber))]"
               : "bg-[radial-gradient(circle_at_35%_30%,#ff6b78,theme(colors.danger-red))]"
           }`}
-          onMouseDown={startHold}
-          onMouseUp={cancelHold}
-          onMouseLeave={cancelHold}
-          onTouchStart={(e) => {
-            e.preventDefault();
-            startHold();
+          style={{
+            touchAction: "none",
+            WebkitTouchCallout: "none",
+            userSelect: "none",
           }}
-          onTouchEnd={cancelHold}
-          onTouchCancel={cancelHold}
+          onPointerDown={handlePointerDown}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerCancel}
         >
           {submitState === "submitting" ? "…" : "SOS"}
         </button>
