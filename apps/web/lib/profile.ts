@@ -47,7 +47,11 @@ export function markOnboardingDone(): void {
 export async function fetchProfile(deviceIdHash: string): Promise<Profile | null> {
   const res = await fetch(`${API_BASE_URL}/profile/${encodeURIComponent(deviceIdHash)}`);
   if (!res.ok) throw new Error(`Profile check failed (${res.status})`);
-  return res.json();
+  // A device with no profile gets a genuinely empty body (Content-Length:
+  // 0), not the text "null" — res.json() throws on that, so read as text
+  // first and only parse when there's actually something to parse.
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
 }
 
 export async function submitProfile(payload: CreateProfileRequest): Promise<Profile> {
