@@ -66,13 +66,30 @@ let intervalId: ReturnType<typeof setInterval> | null = null;
  * every platform." If the tab is closed, syncing pauses and resumes next
  * time the app is opened — queued entries are still safe in IndexedDB.
  */
+/**
+ * An entry can be orphaned mid-request in "syncing" status if the tab
+ * closes, navigates away, or crashes before the request settles — and
+ * runSyncPass's own due-filter permanently excludes "syncing" entries, so
+ * without this an orphaned entry would never retry again. Nothing from a
+ * previous JS context can still be in flight once we're starting up fresh,
+ * so it's always safe to reset "syncing" back to "pending" here.
+ */
+async function resetOrphanedSyncingEntries() {
+  const queue = await getAllQueued();
+  for (const entry of queue) {
+    if (entry.status === "syncing") {
+      await updateQueued({ ...entry, status: "pending", nextRetryAt: Date.now() });
+    }
+  }
+}
+
 export function startSyncEngine() {
   if (started || typeof window === "undefined") return;
   started = true;
 
   window.addEventListener("online", () => void runSyncPass());
   intervalId = setInterval(() => void runSyncPass(), 5000);
-  void runSyncPass();
+  void resetOrphanedSyncingEntries().then(() => runSyncPass());
 }
 
 export function stopSyncEngine() {
