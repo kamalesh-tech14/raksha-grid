@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createSos, readNetworkState, ApiError } from "@/lib/api";
 import { getOrCreateDeviceIdHash } from "@/lib/device";
@@ -56,6 +56,7 @@ export default function SosButton({ ambientSeverity = "watch" }: SosButtonProps)
   const [selectedType, setSelectedType] = useState<EmergencyType>("other");
   const rafRef = useRef<number | null>(null);
   const startRef = useRef<number | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
 
   const stopLoop = useCallback(() => {
     if (rafRef.current !== null) {
@@ -145,9 +146,32 @@ export default function SosButton({ ambientSeverity = "watch" }: SosButtonProps)
     rafRef.current = requestAnimationFrame(tick);
   }, [activate, submitState]);
 
-  const handleTouchStart = useCallback((e: React.TouchEvent<HTMLButtonElement>) => {
-    e.preventDefault();
-    startHold();
+  useEffect(() => {
+    const btn = buttonRef.current;
+    if (!btn) return;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      e.preventDefault();
+      startHold();
+    };
+
+    const handleContextMenu = (e: Event) => {
+      e.preventDefault();
+    };
+
+    const handleSelectStart = (e: Event) => {
+      e.preventDefault();
+    };
+
+    btn.addEventListener("touchstart", handleTouchStart, { passive: false });
+    btn.addEventListener("contextmenu", handleContextMenu, { passive: false });
+    btn.addEventListener("selectstart", handleSelectStart, { passive: false });
+
+    return () => {
+      btn.removeEventListener("touchstart", handleTouchStart);
+      btn.removeEventListener("contextmenu", handleContextMenu);
+      btn.removeEventListener("selectstart", handleSelectStart);
+    };
   }, [startHold]);
 
   const ringClass =
@@ -203,6 +227,7 @@ export default function SosButton({ ambientSeverity = "watch" }: SosButtonProps)
         )}
 
         <button
+          ref={buttonRef}
           type="button"
           disabled={submitState === "submitting"}
           aria-label="Hold for 2 to 3 seconds to send an emergency SOS"
@@ -219,9 +244,6 @@ export default function SosButton({ ambientSeverity = "watch" }: SosButtonProps)
           onMouseDown={startHold}
           onMouseUp={cancelHold}
           onMouseLeave={cancelHold}
-          onTouchStart={handleTouchStart}
-          onTouchEnd={cancelHold}
-          onTouchCancel={cancelHold}
         >
           {submitState === "submitting" ? "…" : "SOS"}
         </button>
