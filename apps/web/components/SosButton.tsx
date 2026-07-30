@@ -145,20 +145,10 @@ export default function SosButton({ ambientSeverity = "watch" }: SosButtonProps)
     rafRef.current = requestAnimationFrame(tick);
   }, [activate, submitState]);
 
-  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+  const handleTouchStart = useCallback((e: React.TouchEvent<HTMLButtonElement>) => {
     e.preventDefault();
     startHold();
   }, [startHold]);
-
-  const handlePointerUp = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
-    e.preventDefault();
-    cancelHold();
-  }, [cancelHold]);
-
-  const handlePointerCancel = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
-    e.preventDefault();
-    cancelHold();
-  }, [cancelHold]);
 
   const ringClass =
     submitState === "error" || submitState === "queued"
@@ -226,9 +216,12 @@ export default function SosButton({ ambientSeverity = "watch" }: SosButtonProps)
             WebkitTouchCallout: "none",
             userSelect: "none",
           }}
-          onPointerDown={handlePointerDown}
-          onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerCancel}
+          onMouseDown={startHold}
+          onMouseUp={cancelHold}
+          onMouseLeave={cancelHold}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={cancelHold}
+          onTouchCancel={cancelHold}
         >
           {submitState === "submitting" ? "…" : "SOS"}
         </button>
