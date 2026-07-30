@@ -49,31 +49,12 @@ interface SosButtonProps {
  */
 export default function SosButton({ ambientSeverity = "watch" }: SosButtonProps) {
   const router = useRouter();
-  const [holding, setHolding] = useState(false);
-  const [progress, setProgress] = useState(0); // 0..1
   const [submitState, setSubmitState] = useState<SubmitState>("idle");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<EmergencyType>("other");
-  const rafRef = useRef<number | null>(null);
-  const startRef = useRef<number | null>(null);
-  const buttonRef = useRef<HTMLDivElement>(null);
-
-  const stopLoop = useCallback(() => {
-    if (rafRef.current !== null) {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
-    }
-    startRef.current = null;
-  }, []);
-
-  const cancelHold = useCallback(() => {
-    stopLoop();
-    setHolding(false);
-    setProgress(0);
-    document.removeEventListener("contextmenu", preventContextMenu);
-  }, [stopLoop]);
 
   const submitSos = useCallback(async () => {
+    if (submitState === "submitting") return;
     setSubmitState("submitting");
     setStatusMessage(null);
 
@@ -118,86 +99,7 @@ export default function SosButton({ ambientSeverity = "watch" }: SosButtonProps)
           : "Couldn't reach the server — stored locally, will retry"
       );
     }
-  }, [router, selectedType]);
-
-  const activate = useCallback(() => {
-    stopLoop();
-    setHolding(false);
-    setProgress(0);
-    document.removeEventListener("contextmenu", preventContextMenu);
-    void submitSos();
-  }, [stopLoop, submitSos]);
-
-  const startHold = useCallback(() => {
-    if (submitState === "submitting") return;
-    setStatusMessage(null);
-    setHolding(true);
-    startRef.current = performance.now();
-    document.addEventListener("contextmenu", preventContextMenu, { passive: false });
-
-    const tick = (now: number) => {
-      if (startRef.current === null) return;
-      const elapsed = now - startRef.current;
-      const pct = Math.min(elapsed / HOLD_MS, 1);
-      setProgress(pct);
-      if (pct >= 1) {
-        activate();
-      } else {
-        rafRef.current = requestAnimationFrame(tick);
-      }
-    };
-    rafRef.current = requestAnimationFrame(tick);
-  }, [activate, submitState]);
-
-  const preventContextMenu = (e: Event) => {
-    e.preventDefault();
-  };
-
-  useEffect(() => {
-    const btn = buttonRef.current;
-    if (!btn) return;
-
-    const handleTouchStart = (e: TouchEvent) => {
-      e.preventDefault();
-      window.getSelection()?.removeAllRanges();
-      startHold();
-    };
-
-    const handleTouchEnd = () => {
-      cancelHold();
-    };
-
-    const handleTouchCancel = () => {
-      cancelHold();
-    };
-
-    const handleContextMenu = (e: Event) => {
-      e.preventDefault();
-    };
-
-    const handleSelectStart = (e: Event) => {
-      e.preventDefault();
-    };
-
-    btn.addEventListener("touchstart", handleTouchStart, { passive: false });
-    btn.addEventListener("touchend", handleTouchEnd, { passive: false });
-    btn.addEventListener("touchcancel", handleTouchCancel, { passive: false });
-    btn.addEventListener("contextmenu", handleContextMenu, { passive: false });
-    btn.addEventListener("selectstart", handleSelectStart, { passive: false });
-
-    return () => {
-      btn.removeEventListener("touchstart", handleTouchStart);
-      btn.removeEventListener("touchend", handleTouchEnd);
-      btn.removeEventListener("touchcancel", handleTouchCancel);
-      btn.removeEventListener("contextmenu", handleContextMenu);
-      btn.removeEventListener("selectstart", handleSelectStart);
-    };
-  }, [startHold, cancelHold]);
-
-  const ringClass =
-    submitState === "error" || submitState === "queued"
-      ? "border-warn-amber opacity-90"
-      : ringColor[ambientSeverity];
+  }, [router, selectedType, submitState]);
 
   return (
     <div className="flex flex-col items-center justify-center py-4">
@@ -220,72 +122,34 @@ export default function SosButton({ ambientSeverity = "watch" }: SosButtonProps)
       </div>
 
       <div className="relative flex h-[118px] w-[118px] items-center justify-center">
-        {/* Ambient / confirmation ring */}
+        {/* Ambient ring */}
         <div
-          className={`absolute inset-0 rounded-full border-2 ${ringClass} ${
-            holding || submitState !== "idle" ? "" : "motion-safe:animate-pulse-ring"
-          }`}
+          className={`absolute inset-0 rounded-full border-2 ${
+            submitState === "error" || submitState === "queued"
+              ? "border-warn-amber opacity-90"
+              : ringColor[ambientSeverity]
+          } motion-safe:animate-pulse-ring`}
           aria-hidden="true"
         />
 
-        {/* Hold-progress ring, only visible while holding */}
-        {holding && (
-          <svg width={88} height={88} className="absolute z-[3] -rotate-90" aria-hidden="true">
-            <circle cx={44} cy={44} r={RADIUS} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth={5} />
-            <circle
-              cx={44}
-              cy={44}
-              r={RADIUS}
-              fill="none"
-              stroke="#fff"
-              strokeWidth={5}
-              strokeLinecap="round"
-              strokeDasharray={CIRCUMFERENCE}
-              strokeDashoffset={CIRCUMFERENCE - CIRCUMFERENCE * progress}
-            />
-          </svg>
-        )}
-
-        <div
-          ref={buttonRef}
-          role="button"
-          tabIndex={0}
-          aria-label="Hold for 2 to 3 seconds to send an emergency SOS"
+        <button
+          type="button"
+          disabled={submitState === "submitting"}
+          onClick={submitSos}
+          aria-label="Tap to send an emergency SOS"
+          className={`z-[2] flex h-[88px] w-[88px] select-none items-center justify-center rounded-full font-display text-[17px] font-bold text-white shadow-sos transition-transform active:scale-95 disabled:opacity-80 ${
+            submitState === "submitting"
+              ? "bg-[radial-gradient(circle_at_35%_30%,#ffd35c,theme(colors.warn-amber))]"
+              : "bg-[radial-gradient(circle_at_35%_30%,#ff6b78,theme(colors.danger-red))]"
+          }`}
           style={{
-            display: "flex",
-            height: "88px",
-            width: "88px",
-            alignItems: "center",
-            justifyContent: "center",
-            borderRadius: "50%",
-            zIndex: 2,
-            fontFamily: "var(--font-space-grotesk)",
-            fontSize: "17px",
-            fontWeight: 700,
-            color: "white",
-            boxShadow: "0 0 20px rgba(255,107,120,0.6)",
-            transitionProperty: "transform",
-            transitionDuration: "150ms",
-            userSelect: "none",
-            WebkitUserSelect: "none",
+            touchAction: "manipulation",
             WebkitTouchCallout: "none",
-            touchAction: "none",
-            outline: "none",
-            cursor: submitState === "submitting" ? "default" : "pointer",
-            opacity: submitState === "submitting" ? 0.8 : 1,
-            backgroundImage:
-              holding
-                ? "radial-gradient(circle at 35% 30%, #ffd35c, #f2a93c)"
-                : "radial-gradient(circle at 35% 30%, #ff6b78, #ff4d5e)",
+            userSelect: "none",
           }}
-          onMouseDown={startHold}
-          onMouseUp={cancelHold}
-          onMouseLeave={cancelHold}
         >
-          <span style={{ pointerEvents: "none" }}>
-            {submitState === "submitting" ? "…" : "SOS"}
-          </span>
-        </div>
+          {submitState === "submitting" ? "…" : "SOS"}
+        </button>
       </div>
 
       <p className="mt-3 text-center font-data text-xs text-text-muted" role="status">
@@ -293,9 +157,7 @@ export default function SosButton({ ambientSeverity = "watch" }: SosButtonProps)
           ? "Getting your location and sending…"
           : submitState === "queued"
           ? statusMessage
-          : holding
-          ? "Keep holding… release to cancel"
-          : "Hold 2–3s to send emergency SOS"}
+          : "Tap to send emergency SOS"}
       </p>
       {submitState === "queued" && (
         <button
