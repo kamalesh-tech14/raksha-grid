@@ -19,6 +19,7 @@ async function main() {
     update: {},
     create: {
       email: "admin@raksha-grid.local",
+      displayName: "Admin",
       passwordHash,
       role: "administrator",
     },
