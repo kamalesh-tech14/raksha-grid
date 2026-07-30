@@ -1,11 +1,9 @@
-// Minimal, honest service worker: caches the app shell so Home and the
-// Offline Emergency Centre still load with no connection, and falls back
-// to the cached Home page for any other navigation that fails offline.
-// This does NOT implement full Background Sync (see lib/syncEngine.ts for
-// why) — it only covers what a service worker can reliably do everywhere:
-// asset caching and offline navigation fallback.
+// Minimal, honest service worker: caches static assets and offline fallback.
+// For HTML/JS navigation requests: network-first (always try to fetch latest),
+// fall back to cache only if offline. For static assets: cache-first.
+// This prevents stale app shells from being served when updates are deployed.
 
-const CACHE_NAME = "raksha-grid-shell-v1";
+const CACHE_NAME = "raksha-grid-shell-v2-2026-07-30";
 const APP_SHELL = ["/", "/offline", "/manifest.json"];
 
 self.addEventListener("install", (event) => {
@@ -27,14 +25,47 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
 
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
+  const isNavigation = event.request.mode === "navigate";
+  const isStaticAsset =
+    event.request.destination === "image" ||
+    event.request.destination === "font" ||
+    event.request.destination === "style" ||
+    event.request.url.includes("/_next/static/");
 
-      return fetch(event.request)
+  if (isNavigation) {
+    // Network-first for HTML pages and JS bundles: always try live first
+    event.respondWith(
+      fetch(event.request)
         .then((response) => {
-          // Only cache successful, same-origin responses — never cache API
-          // calls to services/api, those must always be live.
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        })
+        .catch(() => {
+          return caches.match(event.request).then((cached) => cached || caches.match("/"));
+        })
+    );
+  } else if (isStaticAsset) {
+    // Cache-first for static assets: use cached if available, update in background
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        const fetchPromise = fetch(event.request).then((response) => {
+          if (response.ok && new URL(event.request.url).origin === self.location.origin) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        });
+        return cached || fetchPromise;
+      })
+    );
+  } else {
+    // Default: network-first, fall back to cache if offline
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
           if (response.ok && new URL(event.request.url).origin === self.location.origin) {
             const clone = response.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
@@ -42,11 +73,8 @@ self.addEventListener("fetch", (event) => {
           return response;
         })
         .catch(() => {
-          if (event.request.mode === "navigate") {
-            return caches.match("/");
-          }
-          return new Response("Offline", { status: 503 });
-        });
-    })
-  );
+          return caches.match(event.request).then((cached) => cached || new Response("Offline", { status: 503 }));
+        })
+    );
+  }
 });
