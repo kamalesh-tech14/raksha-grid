@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import * as argon2 from "argon2";
 
 const prisma = new PrismaClient();
 
@@ -9,6 +10,20 @@ const prisma = new PrismaClient();
  * model exists yet. Every row is explicitly `isDemonstrationData: true`.
  */
 async function main() {
+  // Seed admin user for the control dashboard
+  const adminPassword = "admin@RakshaGrid2026!";
+  const passwordHash = await argon2.hash(adminPassword);
+
+  await prisma.user.upsert({
+    where: { email: "admin@raksha-grid.local" },
+    update: {},
+    create: {
+      email: "admin@raksha-grid.local",
+      passwordHash,
+      role: "administrator",
+    },
+  });
+
   await prisma.disasterPrediction.deleteMany({});
   await prisma.shelter.deleteMany({});
   await prisma.hospital.deleteMany({});
