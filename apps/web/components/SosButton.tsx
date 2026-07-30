@@ -56,7 +56,7 @@ export default function SosButton({ ambientSeverity = "watch" }: SosButtonProps)
   const [selectedType, setSelectedType] = useState<EmergencyType>("other");
   const rafRef = useRef<number | null>(null);
   const startRef = useRef<number | null>(null);
-  const buttonRef = useRef<HTMLButtonElement>(null);
+  const buttonRef = useRef<HTMLDivElement>(null);
 
   const stopLoop = useCallback(() => {
     if (rafRef.current !== null) {
@@ -70,6 +70,7 @@ export default function SosButton({ ambientSeverity = "watch" }: SosButtonProps)
     stopLoop();
     setHolding(false);
     setProgress(0);
+    document.removeEventListener("contextmenu", preventContextMenu);
   }, [stopLoop]);
 
   const submitSos = useCallback(async () => {
@@ -123,6 +124,7 @@ export default function SosButton({ ambientSeverity = "watch" }: SosButtonProps)
     stopLoop();
     setHolding(false);
     setProgress(0);
+    document.removeEventListener("contextmenu", preventContextMenu);
     void submitSos();
   }, [stopLoop, submitSos]);
 
@@ -131,6 +133,7 @@ export default function SosButton({ ambientSeverity = "watch" }: SosButtonProps)
     setStatusMessage(null);
     setHolding(true);
     startRef.current = performance.now();
+    document.addEventListener("contextmenu", preventContextMenu, { passive: false });
 
     const tick = (now: number) => {
       if (startRef.current === null) return;
@@ -146,13 +149,26 @@ export default function SosButton({ ambientSeverity = "watch" }: SosButtonProps)
     rafRef.current = requestAnimationFrame(tick);
   }, [activate, submitState]);
 
+  const preventContextMenu = (e: Event) => {
+    e.preventDefault();
+  };
+
   useEffect(() => {
     const btn = buttonRef.current;
     if (!btn) return;
 
     const handleTouchStart = (e: TouchEvent) => {
       e.preventDefault();
+      window.getSelection()?.removeAllRanges();
       startHold();
+    };
+
+    const handleTouchEnd = () => {
+      cancelHold();
+    };
+
+    const handleTouchCancel = () => {
+      cancelHold();
     };
 
     const handleContextMenu = (e: Event) => {
@@ -164,15 +180,19 @@ export default function SosButton({ ambientSeverity = "watch" }: SosButtonProps)
     };
 
     btn.addEventListener("touchstart", handleTouchStart, { passive: false });
+    btn.addEventListener("touchend", handleTouchEnd, { passive: false });
+    btn.addEventListener("touchcancel", handleTouchCancel, { passive: false });
     btn.addEventListener("contextmenu", handleContextMenu, { passive: false });
     btn.addEventListener("selectstart", handleSelectStart, { passive: false });
 
     return () => {
       btn.removeEventListener("touchstart", handleTouchStart);
+      btn.removeEventListener("touchend", handleTouchEnd);
+      btn.removeEventListener("touchcancel", handleTouchCancel);
       btn.removeEventListener("contextmenu", handleContextMenu);
       btn.removeEventListener("selectstart", handleSelectStart);
     };
-  }, [startHold]);
+  }, [startHold, cancelHold]);
 
   const ringClass =
     submitState === "error" || submitState === "queued"
@@ -226,27 +246,46 @@ export default function SosButton({ ambientSeverity = "watch" }: SosButtonProps)
           </svg>
         )}
 
-        <button
+        <div
           ref={buttonRef}
-          type="button"
-          disabled={submitState === "submitting"}
+          role="button"
+          tabIndex={0}
           aria-label="Hold for 2 to 3 seconds to send an emergency SOS"
-          className={`z-[2] flex h-[88px] w-[88px] select-none items-center justify-center rounded-full font-display text-[17px] font-bold text-white shadow-sos transition-transform active:scale-95 disabled:opacity-80 ${
-            holding
-              ? "bg-[radial-gradient(circle_at_35%_30%,#ffd35c,theme(colors.warn-amber))]"
-              : "bg-[radial-gradient(circle_at_35%_30%,#ff6b78,theme(colors.danger-red))]"
-          }`}
           style={{
-            touchAction: "none",
-            WebkitTouchCallout: "none",
+            display: "flex",
+            height: "88px",
+            width: "88px",
+            alignItems: "center",
+            justifyContent: "center",
+            borderRadius: "50%",
+            zIndex: 2,
+            fontFamily: "var(--font-space-grotesk)",
+            fontSize: "17px",
+            fontWeight: 700,
+            color: "white",
+            boxShadow: "0 0 20px rgba(255,107,120,0.6)",
+            transitionProperty: "transform",
+            transitionDuration: "150ms",
             userSelect: "none",
+            WebkitUserSelect: "none",
+            WebkitTouchCallout: "none",
+            touchAction: "none",
+            outline: "none",
+            cursor: submitState === "submitting" ? "default" : "pointer",
+            opacity: submitState === "submitting" ? 0.8 : 1,
+            backgroundImage:
+              holding
+                ? "radial-gradient(circle at 35% 30%, #ffd35c, #f2a93c)"
+                : "radial-gradient(circle at 35% 30%, #ff6b78, #ff4d5e)",
           }}
           onMouseDown={startHold}
           onMouseUp={cancelHold}
           onMouseLeave={cancelHold}
         >
-          {submitState === "submitting" ? "…" : "SOS"}
-        </button>
+          <span style={{ pointerEvents: "none" }}>
+            {submitState === "submitting" ? "…" : "SOS"}
+          </span>
+        </div>
       </div>
 
       <p className="mt-3 text-center font-data text-xs text-text-muted" role="status">
