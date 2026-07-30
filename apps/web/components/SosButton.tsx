@@ -172,7 +172,13 @@ export default function SosButton({ ambientSeverity = "watch" }: SosButtonProps)
 
         {/* Confirmation countdown ring */}
         {confirming && (
-          <svg width={88} height={88} className="absolute z-[3] -rotate-90" aria-hidden="true">
+          <svg
+            width={88}
+            height={88}
+            className="absolute z-[3] -rotate-90"
+            aria-hidden="true"
+            style={{ pointerEvents: "none" }}
+          >
             <circle cx={44} cy={44} r={RADIUS} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth={5} />
             <circle
               cx={44}
