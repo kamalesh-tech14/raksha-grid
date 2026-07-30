@@ -9,7 +9,7 @@ import { enqueueSos } from "@/lib/offlineQueue";
 import { startSyncEngine } from "@/lib/syncEngine";
 import type { EmergencyType } from "@raksha-grid/shared-types";
 
-const HOLD_MS = 2400;
+const CONFIRM_TIMEOUT_MS = 3000;
 const RADIUS = 39;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
@@ -35,26 +35,67 @@ interface SosButtonProps {
   ambientSeverity?: RiskSeverity;
 }
 
-/**
- * The Pulse Ring is the platform's signature element (see
- * docs/PHASE-2-DESIGN-SYSTEM.md §1 "Signature element"): it doubles as an
- * always-on ambient risk indicator and freezes solid the instant an SOS
- * hold completes, giving unambiguous "your press registered" feedback.
- *
- * As of Phase 5: if sending fails (or the device is already offline), this
- * genuinely stores the SOS in IndexedDB via lib/offlineQueue and starts the
- * real retry engine (lib/syncEngine) — "stored locally, will retry" is no
- * longer just a message, it's an actual queued record that survives a page
- * refresh. See app/offline for where queued reports are visible/retryable.
- */
 export default function SosButton({ ambientSeverity = "watch" }: SosButtonProps) {
   const router = useRouter();
   const [submitState, setSubmitState] = useState<SubmitState>("idle");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<EmergencyType>("other");
+  const [confirming, setConfirming] = useState(false);
+  const [confirmCountdown, setConfirmCountdown] = useState(0);
+  const confirmTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (!confirming) return;
+
+    setConfirmCountdown(3);
+    let remaining = 3;
+
+    confirmTimerRef.current = setInterval(() => {
+      remaining -= 1;
+      setConfirmCountdown(remaining);
+      if (remaining <= 0) {
+        if (confirmTimerRef.current) {
+          clearInterval(confirmTimerRef.current);
+          confirmTimerRef.current = null;
+        }
+        setConfirming(false);
+      }
+    }, 1000);
+
+    return () => {
+      if (confirmTimerRef.current) {
+        clearInterval(confirmTimerRef.current);
+        confirmTimerRef.current = null;
+      }
+    };
+  }, [confirming]);
+
+  const handleSosClick = useCallback(() => {
+    if (submitState === "submitting") return;
+
+    if (!confirming) {
+      setConfirming(true);
+      return;
+    }
+
+    // Second tap within 3 seconds — submit
+    setConfirming(false);
+    if (confirmTimerRef.current) {
+      clearInterval(confirmTimerRef.current);
+      confirmTimerRef.current = null;
+    }
+    void submitSos();
+  }, [confirming, submitState]);
+
+  const handleCancel = useCallback(() => {
+    setConfirming(false);
+    if (confirmTimerRef.current) {
+      clearInterval(confirmTimerRef.current);
+      confirmTimerRef.current = null;
+    }
+  }, []);
 
   const submitSos = useCallback(async () => {
-    if (submitState === "submitting") return;
     setSubmitState("submitting");
     setStatusMessage(null);
 
@@ -72,8 +113,6 @@ export default function SosButton({ ambientSeverity = "watch" }: SosButtonProps)
       ...location,
     };
 
-    // Already offline — don't waste time waiting on a fetch that will
-    // certainly fail. Queue immediately.
     if (!networkState.online) {
       await enqueueSos(payload);
       startSyncEngine();
@@ -87,9 +126,6 @@ export default function SosButton({ ambientSeverity = "watch" }: SosButtonProps)
       setSubmitState("idle");
       router.push(`/sos/${incident.id}`);
     } catch (err) {
-      // The request genuinely failed (server down, DNS, timeout, etc.) —
-      // this is exactly the case Phase 4 could only show an error for.
-      // Now it really queues instead.
       await enqueueSos(payload);
       startSyncEngine();
       setSubmitState("queued");
@@ -99,7 +135,7 @@ export default function SosButton({ ambientSeverity = "watch" }: SosButtonProps)
           : "Couldn't reach the server — stored locally, will retry"
       );
     }
-  }, [router, selectedType, submitState]);
+  }, [router, selectedType]);
 
   return (
     <div className="flex flex-col items-center justify-center py-4">
@@ -109,7 +145,7 @@ export default function SosButton({ ambientSeverity = "watch" }: SosButtonProps)
             key={opt.value}
             type="button"
             onClick={() => setSelectedType(opt.value)}
-            disabled={submitState === "submitting"}
+            disabled={submitState === "submitting" || confirming}
             className={`rounded-full border px-2.5 py-1 font-data text-[11px] ${
               selectedType === opt.value
                 ? "border-danger-red/50 bg-danger-red/15 text-danger-red"
@@ -125,30 +161,55 @@ export default function SosButton({ ambientSeverity = "watch" }: SosButtonProps)
         {/* Ambient ring */}
         <div
           className={`absolute inset-0 rounded-full border-2 ${
-            submitState === "error" || submitState === "queued"
+            confirming
+              ? "border-warn-amber"
+              : submitState === "error" || submitState === "queued"
               ? "border-warn-amber opacity-90"
               : ringColor[ambientSeverity]
-          } motion-safe:animate-pulse-ring`}
+          } ${confirming ? "" : "motion-safe:animate-pulse-ring"}`}
           aria-hidden="true"
         />
+
+        {/* Confirmation countdown ring */}
+        {confirming && (
+          <svg width={88} height={88} className="absolute z-[3] -rotate-90" aria-hidden="true">
+            <circle cx={44} cy={44} r={RADIUS} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth={5} />
+            <circle
+              cx={44}
+              cy={44}
+              r={RADIUS}
+              fill="none"
+              stroke="#ffd35c"
+              strokeWidth={5}
+              strokeLinecap="round"
+              strokeDasharray={CIRCUMFERENCE}
+              strokeDashoffset={CIRCUMFERENCE - (CIRCUMFERENCE * (3 - confirmCountdown)) / 3}
+              style={{ transition: "stroke-dashoffset 0.1s linear" }}
+            />
+          </svg>
+        )}
 
         <button
           type="button"
           disabled={submitState === "submitting"}
-          onClick={submitSos}
-          aria-label="Tap to send an emergency SOS"
+          onClick={handleSosClick}
+          aria-label={confirming ? "Tap again to confirm SOS" : "Tap to send an emergency SOS"}
           className={`z-[2] flex h-[88px] w-[88px] select-none items-center justify-center rounded-full font-display text-[17px] font-bold text-white shadow-sos transition-transform active:scale-95 disabled:opacity-80 ${
             submitState === "submitting"
+              ? "bg-[radial-gradient(circle_at_35%_30%,#ffd35c,theme(colors.warn-amber))]"
+              : confirming
               ? "bg-[radial-gradient(circle_at_35%_30%,#ffd35c,theme(colors.warn-amber))]"
               : "bg-[radial-gradient(circle_at_35%_30%,#ff6b78,theme(colors.danger-red))]"
           }`}
           style={{
-            touchAction: "manipulation",
-            WebkitTouchCallout: "none",
             userSelect: "none",
           }}
         >
-          {submitState === "submitting" ? "…" : "SOS"}
+          {submitState === "submitting"
+            ? "…"
+            : confirming
+            ? confirmCountdown
+            : "SOS"}
         </button>
       </div>
 
@@ -157,8 +218,19 @@ export default function SosButton({ ambientSeverity = "watch" }: SosButtonProps)
           ? "Getting your location and sending…"
           : submitState === "queued"
           ? statusMessage
-          : "Tap to send emergency SOS"}
+          : confirming
+          ? `${confirmCountdown}s — Tap again to confirm`
+          : "Tap once, then tap again to confirm"}
       </p>
+      {confirming && (
+        <button
+          type="button"
+          onClick={handleCancel}
+          className="mt-1 font-data text-xs text-accent-cyan underline"
+        >
+          Cancel
+        </button>
+      )}
       {submitState === "queued" && (
         <button
           type="button"
