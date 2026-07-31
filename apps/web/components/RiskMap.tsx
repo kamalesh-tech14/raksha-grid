@@ -68,10 +68,124 @@ function TapToSetLocation({ onSet }: { onSet: (lat: number, lng: number) => void
   return null;
 }
 
+/** Lets the person tap the map to set a destination for the safest route feature */
+function TapToSetSafestDestination({ onSet }: { onSet: (lat: number, lng: number) => void }) {
+  useMapEvents({
+    click(e) {
+      onSet(e.latlng.lat, e.latlng.lng);
+    },
+  });
+  return null;
+}
+
 interface RouteResult {
   distanceMetres: number;
   durationSeconds: number;
   coordinates: [number, number][]; // [lat, lng] pairs for Polyline
+  dangerExposureMetres?: number; // Total distance through danger zones
+  isSafeRoute?: boolean; // Whether this route avoids all dangers
+}
+
+interface RiskZone {
+  id: string;
+  centerLat: number;
+  centerLng: number;
+  radiusMetres: number;
+  disasterType: string;
+  severity: string;
+}
+
+/**
+ * Haversine formula — calculate distance between two lat/lng points in metres
+ */
+function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000; // Earth's radius in metres
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+/**
+ * Check if a single point is inside a danger zone
+ */
+function isPointInDangerZone(lat: number, lng: number, zone: RiskZone): boolean {
+  const distance = haversine(lat, lng, zone.centerLat, zone.centerLng);
+  return distance <= zone.radiusMetres;
+}
+
+/**
+ * Calculate total danger exposure for a route — metres of polyline inside danger zones
+ */
+function calculateDangerExposure(coordinates: [number, number][], zones: RiskZone[]): { total: number; zones: Set<string> } {
+  let totalMetres = 0;
+  const affectedZones = new Set<string>();
+
+  for (let i = 0; i < coordinates.length - 1; i++) {
+    const [lat1, lng1] = coordinates[i];
+    const [lat2, lng2] = coordinates[i + 1];
+    const segmentDistance = haversine(lat1, lng1, lat2, lng2);
+
+    // Check midpoint of segment against each zone
+    const midLat = (lat1 + lat2) / 2;
+    const midLng = (lng1 + lng2) / 2;
+
+    for (const zone of zones) {
+      if (isPointInDangerZone(midLat, midLng, zone)) {
+        totalMetres += segmentDistance;
+        affectedZones.add(zone.id);
+        break; // Don't double-count if multiple zones overlap
+      }
+    }
+  }
+
+  return { total: totalMetres, zones: affectedZones };
+}
+
+/**
+ * Fetch multiple route alternatives from OSRM with danger avoidance scoring
+ */
+async function fetchSafestRoute(
+  fromLat: number,
+  fromLng: number,
+  toLat: number,
+  toLng: number,
+  dangerZones: RiskZone[]
+): Promise<RouteResult> {
+  // Get up to 3 alternative routes
+  const url = `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?alternatives=true&overview=full&geometries=geojson`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Routing failed (${res.status})`);
+
+  const data = await res.json();
+  if (!data.routes?.length) throw new Error("No route found");
+
+  // Score each route by danger exposure
+  const scoredRoutes = data.routes.map((route: any) => {
+    const coordinates = route.geometry.coordinates.map(([lng, lat]: [number, number]) => [lat, lng]);
+    const { total: dangerMetres, zones: affectedZones } = calculateDangerExposure(coordinates, dangerZones);
+
+    return {
+      distanceMetres: route.distance,
+      durationSeconds: route.duration,
+      coordinates,
+      dangerExposureMetres: dangerMetres,
+      isSafeRoute: dangerMetres === 0,
+      affectedZones: Array.from(affectedZones),
+    };
+  });
+
+  // Sort: first by safety (fully safe routes first), then by danger exposure, then by distance
+  scoredRoutes.sort((a: any, b: any) => {
+    if (a.isSafeRoute !== b.isSafeRoute) return (b.isSafeRoute ? 1 : 0) - (a.isSafeRoute ? 1 : 0);
+    if (a.dangerExposureMetres !== b.dangerExposureMetres) return a.dangerExposureMetres - b.dangerExposureMetres;
+    return a.distanceMetres - b.distanceMetres;
+  });
+
+  return scoredRoutes[0];
 }
 
 /**
@@ -123,6 +237,15 @@ export default function RiskMap() {
   const [tapToSetActive, setTapToSetActive] = useState(false);
   const [shelters, setShelters] = useState<ShelterResponse[]>([]);
   const [hospitals, setHospitals] = useState<HospitalResponse[]>([]);
+
+  // Safest route feature state
+  const [safestRouteMode, setSafestRouteMode] = useState(false);
+  const [selectingSafestDestination, setSelectingSafestDestination] = useState(false);
+  const [safestRoute, setSafestRoute] = useState<RouteResult | null>(null);
+  const [safestRouteState, setSafestRouteState] = useState<"idle" | "loading" | "loaded" | "error">("idle");
+  const [safestRouteError, setSafestRouteError] = useState<string | null>(null);
+  const [safestRouteTarget, setSafestRouteTarget] = useState<{ name: string; lat: number; lng: number } | null>(null);
+  const [safestRouteFeedback, setSafestRouteFeedback] = useState<string | null>(null);
 
   const DEFAULT_CENTER: [number, number] = [13.0524, 80.096]; // Chennai · Poonamallee — matches the seeded demo region
 
@@ -211,6 +334,56 @@ export default function RiskMap() {
       });
   }
 
+  function computeSafestRoute(name: string, lat: number, lng: number) {
+    if (!userLocation) return;
+
+    setSafestRouteTarget({ name, lat, lng });
+    setSafestRouteState("loading");
+    setSafestRouteError(null);
+    setSafestRouteFeedback(null);
+    setSelectingSafestDestination(false);
+
+    // Convert predictions to risk zones
+    const dangerZones: RiskZone[] = predictions
+      .filter((p) => p.centerLat != null && p.centerLng != null && p.radiusMetres)
+      .map((p) => ({
+        id: p.id,
+        centerLat: p.centerLat as number,
+        centerLng: p.centerLng as number,
+        radiusMetres: p.radiusMetres as number,
+        disasterType: p.disasterType,
+        severity: p.severity,
+      }));
+
+    fetchSafestRoute(userLocation.lat, userLocation.lng, lat, lng, dangerZones)
+      .then((r: any) => {
+        setSafestRoute(r);
+        setSafestRouteState("loaded");
+
+        // Generate feedback message
+        if (r.isSafeRoute) {
+          setSafestRouteFeedback(
+            `✅ Safest route selected — avoids all ${dangerZones.length} active danger zones`
+          );
+        } else {
+          const affectedZoneNames = r.affectedZones
+            ?.map((zoneId: string) => {
+              const zone = dangerZones.find((z) => z.id === zoneId);
+              return zone?.disasterType ?? "danger";
+            })
+            .join(", ") || "danger";
+
+          setSafestRouteFeedback(
+            `⚠️ No fully safe route available. This route has the least exposure — passes near ${affectedZoneNames} for approximately ${Math.round(r.dangerExposureMetres / 1000)}m.`
+          );
+        }
+      })
+      .catch((err) => {
+        setSafestRouteState("error");
+        setSafestRouteError(err instanceof Error ? err.message : "Routing failed");
+      });
+  }
+
   useEffect(() => {
     getPredictions("chennai-poonamallee")
       .then(setPredictions)
@@ -296,8 +469,21 @@ export default function RiskMap() {
 
           {tapToSetActive && <TapToSetLocation onSet={setManualLocation} />}
 
+          {selectingSafestDestination && (
+            <TapToSetSafestDestination
+              onSet={(lat, lng) => computeSafestRoute("Selected destination", lat, lng)}
+            />
+          )}
+
           {route && (
             <Polyline positions={route.coordinates} pathOptions={{ color: "#3AD1F2", weight: 4, opacity: 0.85 }} />
+          )}
+
+          {safestRoute && (
+            <Polyline
+              positions={safestRoute.coordinates}
+              pathOptions={{ color: "#2ED9A0", weight: 5, opacity: 0.9, dashArray: "8 6" }}
+            />
           )}
 
           {userLocation && (
@@ -491,6 +677,125 @@ export default function RiskMap() {
               <p className="mt-1 font-data text-xs text-text-primary">
                 {(route.distanceMetres / 1000).toFixed(1)} km · ~{Math.round(route.durationSeconds / 60)} min by road
               </p>
+            )}
+          </div>
+        )}
+
+        {!safestRouteMode && (
+          <button
+            type="button"
+            onClick={() => setSafestRouteMode(true)}
+            className="mt-3 w-full rounded-card border border-success-green/40 bg-success-green/10 py-2.5 text-sm font-semibold text-success-green"
+          >
+            🛡️ Find safest route
+          </button>
+        )}
+
+        {safestRouteMode && (
+          <div className="mt-3 rounded-card border border-success-green/40 bg-success-green/10 p-3">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-semibold text-success-green">🛡️ Find Safest Route</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setSafestRouteMode(false);
+                  setSelectingSafestDestination(false);
+                  setSafestRoute(null);
+                  setSafestRouteTarget(null);
+                  setSafestRouteFeedback(null);
+                  setSafestRouteState("idle");
+                }}
+                className="font-data text-[11px] text-text-muted underline"
+              >
+                Cancel
+              </button>
+            </div>
+
+            {!selectingSafestDestination && !safestRouteTarget && (
+              <div>
+                <p className="font-data text-xs text-text-secondary mb-2">Choose a destination:</p>
+                <button
+                  type="button"
+                  onClick={() => setSelectingSafestDestination(true)}
+                  className="w-full rounded-card border border-success-green/40 bg-success-green/5 py-1.5 text-xs font-semibold text-success-green mb-2"
+                >
+                  📍 Tap on the map to set destination
+                </button>
+
+                {shelters.length > 0 && (
+                  <div className="mt-2">
+                    <p className="font-data text-[10px] text-text-muted mb-1">Or pick a shelter:</p>
+                    {shelters.slice(0, 2).map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => computeSafestRoute(s.name, s.latitude, s.longitude)}
+                        className="w-full text-left px-2 py-1 text-xs text-text-primary hover:bg-success-green/10 rounded border border-transparent"
+                      >
+                        🏠 {s.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {hospitals.length > 0 && (
+                  <div className="mt-2">
+                    <p className="font-data text-[10px] text-text-muted mb-1">Or pick a hospital:</p>
+                    {hospitals.slice(0, 2).map((h) => (
+                      <button
+                        key={h.id}
+                        type="button"
+                        onClick={() => computeSafestRoute(h.name, h.latitude, h.longitude)}
+                        className="w-full text-left px-2 py-1 text-xs text-text-primary hover:bg-success-green/10 rounded border border-transparent"
+                      >
+                        🏥 {h.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {selectingSafestDestination && (
+              <p className="font-data text-xs text-success-green">📍 Tap your destination on the map…</p>
+            )}
+
+            {safestRouteTarget && (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-semibold text-success-green">To: {safestRouteTarget.name}</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSafestRouteTarget(null);
+                      setSafestRoute(null);
+                      setSafestRouteFeedback(null);
+                      setSafestRouteState("idle");
+                    }}
+                    className="font-data text-[10px] text-text-muted underline"
+                  >
+                    Clear
+                  </button>
+                </div>
+
+                {safestRouteState === "loading" && (
+                  <p className="mt-1 font-data text-xs text-text-muted">Analyzing routes for danger exposure…</p>
+                )}
+
+                {safestRouteState === "error" && (
+                  <p className="mt-1 font-data text-xs text-warn-amber">Routing failed — {safestRouteError}</p>
+                )}
+
+                {safestRouteState === "loaded" && safestRoute && (
+                  <div>
+                    <p className="mt-2 font-data text-xs text-success-green font-semibold">{safestRouteFeedback}</p>
+                    <p className="mt-2 font-data text-xs text-text-primary">
+                      {(safestRoute.distanceMetres / 1000).toFixed(1)} km · ~{Math.round(safestRoute.durationSeconds / 60)} min by road
+                      {safestRoute.dangerExposureMetres ? ` · ${Math.round(safestRoute.dangerExposureMetres)}m through danger zones` : ""}
+                    </p>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         )}
